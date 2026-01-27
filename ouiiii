@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>NeoBank – Temps réel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body{margin:0;font-family:Arial;background:#eef2ff}
+.container{max-width:1000px;margin:auto;padding:15px}
+.card{background:#fff;padding:15px;border-radius:15px;margin-bottom:15px}
+h1,h2{color:#1e3a8a}
+input,select,button{width:100%;padding:12px;margin:6px 0;border-radius:10px;border:1px solid #ccc}
+button{background:#1e3a8a;color:#fff;font-weight:bold}
+.hidden{display:none}
+.balance{font-size:30px;font-weight:bold}
+.nav{display:flex;gap:10px;flex-wrap:wrap}
+.nav button{flex:1}
+ul{padding-left:20px}
+.realtime{color:green;font-weight:bold}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<!-- AUTH -->
+<div id="auth" class="card">
+<h1>🏦 NeoBank</h1>
+
+<h3>Connexion</h3>
+<input id="loginUser" placeholder="Identifiant">
+<input id="loginPass" type="password" placeholder="Mot de passe">
+<button onclick="startLogin()">Connexion</button>
+
+<hr>
+
+<h3>Inscription</h3>
+<input id="regUser" placeholder="Nouvel identifiant">
+<input id="regPass" type="password">
+<select id="regType">
+<option value="client">Client</option>
+<option value="banquier">Banquier</option>
+<option value="bdf">Banque de France</option>
+<option value="argent">Argent Mondial</option>
+</select>
+<button onclick="register()">Créer le compte</button>
+</div>
+
+<!-- 2FA -->
+<div id="twofa" class="card hidden">
+<h2>🔐 Vérification</h2>
+<p>Code SMS : <strong id="smsCode"></strong></p>
+<input id="codeInput">
+<button onclick="confirm2FA()">Valider</button>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard" class="hidden">
+
+<h1 id="welcome"></h1>
+
+<div class="card">
+<div class="balance"><span id="balance">0</span> €</div>
+<p>IBAN : <span id="iban"></span></p>
+<p>Carte : <span id="card"></span></p>
+<p id="realtime" class="realtime"></p>
+</div>
+
+<div class="nav">
+<button onclick="show('pay')">💳 Carte</button>
+<button onclick="show('transfer')">💸 Virement</button>
+<button onclick="show('history')">📜 Historique</button>
+<button id="adminBtn" onclick="show('admin')" class="hidden">🛠 Admin</button>
+</div>
+
+<div id="pay" class="card hidden">
+<h2>Paiement carte</h2>
+<select id="merchant">
+<option>Amazon</option>
+<option>Netflix</option>
+<option>Apple</option>
+</select>
+<input id="payAmount" type="number">
+<button onclick="pay()">Payer</button>
+</div>
+
+<div id="transfer" class="card hidden">
+<h2>Virement</h2>
+<input id="target">
+<input id="amount" type="number">
+<button onclick="transfer()">Envoyer</button>
+</div>
+
+<div id="admin" class="card hidden">
+<h2>Panel banquier</h2>
+<ul id="accounts"></ul>
+</div>
+
+<div id="history" class="card hidden">
+<h2>Historique</h2>
+<ul id="historyList"></ul>
+</div>
+
+<button onclick="logout()">Déconnexion</button>
+</div>
+</div>
+
+<script>
+/* ========= INIT ========= */
+let users = JSON.parse(localStorage.getItem("users")) || {};
+
+/* COMPTES GARANTIS */
+users.banquier ??= {pass:"admin",type:"banquier",balance:50000,iban:"FRADMIN",card:"****1111",history:[]};
+users.banque_de_france ??= {pass:"bdf",type:"bdf",balance:0,iban:"FRBDF",card:"****9999",history:[]};
+users.client_demo ??= {pass:"demo",type:"client",balance:1500,iban:"FRDEMO",card:"****2222",history:[]};
+users.argent_mondial ??= {pass:"world",type:"argent",balance:0,iban:"FRWORLD",card:"****7777",history:[]};
+
+save();
+
+let currentUser=null,tempUser=null,tempCode=null;
+
+/* ========= GAINS TEMPS RÉEL ========= */
+setInterval(()=>{
+ if(users.banque_de_france) users.banque_de_france.balance += 0.10;
+ if(users.argent_mondial) users.argent_mondial.balance += 2.00;
+
+ save();
+ if(currentUser==="banque_de_france" || currentUser==="argent_mondial"){
+  updateUI();
+ }
+},10);
+
+/* ========= AUTH ========= */
+function register(){
+ let u=regUser.value.trim();
+ if(!u||users[u]) return alert("Compte invalide");
+
+ users[u]={
+  pass:regPass.value,
+  type:regType.value,
+  balance:1000,
+  iban:"FR"+Math.random().toString().slice(2,14),
+  card:"**** "+Math.floor(1000+Math.random()*9000),
+  history:[]
+ };
+ save(); alert("Compte créé");
+}
+
+function startLogin(){
+ let u=loginUser.value.trim(),p=loginPass.value.trim();
+ if(!users[u]||users[u].pass!==p) return alert("Erreur");
+ tempUser=u;
+ tempCode=Math.floor(100000+Math.random()*900000);
+ smsCode.innerText=tempCode;
+ auth.classList.add("hidden");
+ twofa.classList.remove("hidden");
+}
+
+function confirm2FA(){
+ if(codeInput.value!=tempCode) return alert("Code incorrect");
+ currentUser=tempUser;
+ tempUser=null; tempCode=null;
+ twofa.classList.add("hidden");
+ dashboard.classList.remove("hidden");
+ updateUI();
+}
+
+/* ========= UI ========= */
+function updateUI(){
+ let u=users[currentUser];
+ welcome.innerText="Bienvenue "+currentUser;
+ balance.innerText=u.balance.toFixed(2);
+ iban.innerText=u.iban;
+ card.innerText=u.card;
+
+ realtime.innerText =
+  currentUser==="banque_de_france" ? "+0,10 € / 10 ms (temps réel)" :
+  currentUser==="argent_mondial" ? "+200 € / seconde (temps réel)" : "";
+
+ historyList.innerHTML=u.history.map(h=>"<li>"+h+"</li>").join("");
+
+ adminBtn.classList.toggle("hidden", u.type!=="banquier");
+
+ if(u.type==="banquier"){
+  accounts.innerHTML="";
+  for(let k in users){
+   accounts.innerHTML+=`<li>${k} : ${users[k].balance.toFixed(2)} €</li>`;
+  }
+ }
+}
+
+/* ========= ACTIONS ========= */
+function log(t){
+ users[currentUser].history.unshift(
+  new Date().toLocaleTimeString()+" - "+t
+ );
+}
+
+function pay(){
+ let a=+payAmount.value;
+ if(a<=0||users[currentUser].balance<a) return alert("Refusé");
+ users[currentUser].balance-=a;
+ log("Paiement "+merchant.value+" "+a+"€");
+ save(); updateUI();
+}
+
+function transfer(){
+ let t=target.value,a=+amount.value;
+ if(!users[t]||a<=0||users[currentUser].balance<a) return alert("Erreur");
+ users[currentUser].balance-=a;
+ users[t].balance+=a;
+ log("Virement "+a+"€ → "+t);
+ save(); updateUI();
+}
+
+/* ========= NAV ========= */
+function show(id){
+ ["pay","transfer","history","admin"].forEach(s=>{
+  document.getElementById(s).classList.add("hidden");
+ });
+ document.getElementById(id).classList.remove("hidden");
+}
+
+function logout(){
+ currentUser=null;
+ dashboard.classList.add("hidden");
+ auth.classList.remove("hidden");
+}
+
+function save(){
+ localStorage.setItem("users",JSON.stringify(users));
+}
+</script>
+</body>
+</html>
